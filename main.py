@@ -810,3 +810,18 @@ if __name__ == '__main__':
             sys.exit(-1)
 
         run_scanner(video_file, scan_mode)
+
+def run_camera_scanner():
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Error: Could not open camera.")
+        return
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Error: Can't receive frame (stream end?).")
+            break
+        yield frame
+
+    cap.release()
