@@ -90,113 +90,6 @@ class LineScanner(object):
 
     #######################################################################################
     #######################################################################################
-    def init_scan(self):
-        '''
-        *** DESCRIPTION
-            This is the scanner function.
-
-        *** INPUT
-            <scan_mode>:        scan mode to process video e.g.(column/width)
-            <video_path>:       video file to process
-
-        *** OUTPUT
-            <scanned image>:    A flat image (unwrapped) from the rotating object
-        '''
-
-        status = False
-        if len(sys.argv) < 3:
-            print("")
-            print("-> Usage %s <scan_mode> <video_file>" % sys.argv[0])
-            print("")
-            sys.exit(-1)
-
-        # check if input file exists
-        self.mode = sys.argv[1]
-        if self.mode == "column":
-            print("-> scan mode: column")
-            pass
-        elif self.mode == "width":
-            print("-> scan mode: width")
-            pass
-        else:
-            print("")
-            print("-> mode: <column> for column pixel scan")
-            print("-> mode: <width> for width_roi pixel scan")
-            print("-> Usage %s <scan_mode> <video_file>" % sys.argv[0])
-            print("")
-            sys.exit(-1)
-
-        # check if input file exists
-        self.input_dir = sys.argv[2]
-        if not os.path.isfile(self.input_dir):
-            print("-> file: %s could not be found" % self.input_dir)
-            print("")
-            sys.exit(-1)
-
-        # Save input directory
-        self.filename = os.path.basename(os.path.splitext(self.input_dir)[0])
-        self.input_dir = self.input_dir
-        self.output_dir = os.path.join(os.getcwd(), "RESULT")
-        try:
-            os.mkdir(self.output_dir)
-        except OSError:
-            # for filename in os.listdir(self.output_dir):
-            #   file_path = os.path.join(self.output_dir, filename)
-            #   try:
-            #       if os.path.isfile(file_path) or os.path.islink(file_path):
-            #           os.unlink(file_path)
-            #       elif os.path.isdir(file_path):
-            #           shutil.rmtree(file_path)
-            #   except Exception as e:
-            #       print('Failed to delete %s. Reason: %s' % (file_path, e))
-            pass
-
-        # ================================================================ DEBUG
-        # print debug info?
-        if config.getboolean('DEBUG', 'visualize'):
-            print("[DEBUG] filename:        ", self.filename)
-            print("[DEBUG] input dir:       ", self.input_dir)
-            print("[DEBUG] output dir:      ", self.output_dir)
-        # ================================================================ DEBUG
-
-        # Video object
-        video_obj = cv2.VideoCapture(self.input_dir)
-
-        # Total number of frames in video
-        self.totalFrames = int(video_obj.get(cv2.CAP_PROP_FRAME_COUNT))
-
-        # ================================================================ DEBUG
-        # print debug info?
-        if config.getboolean('DEBUG', 'visualize'):
-            print("[DEBUG] total frames:            ", self.totalFrames)
-            print("[DEBUG] frames per second:       ", int(video_obj.get(cv2.CAP_PROP_FPS)))
-            print("[DEBUG] duration in seconds:     ", float(round(self.totalFrames / int(video_obj.get(cv2.CAP_PROP_FPS)), 2)))
-        # ================================================================ DEBUG
-
-        # totalFrames = 30
-        totalFrames = self.totalFrames
-
-        # ================================================================ DEBUG
-        # print debug info?
-        if config.getboolean('DEBUG', 'visualize'):
-            print("")
-            print("============================")
-            print("processing video...")
-            print("")
-        # ================================================================ DEBUG
-
-        if self.mode == "width":
-            # scan mode based in width_roi
-            self.width_scan_mode(video_obj)
-
-            # Concadenate list of ROis
-            self.concatenate_frames()
-
-        if self.mode == "column":
-            self.column_scan_mode(video_obj)
-
-    #######################################################################################
-    #######################################################################################
     def width_scan_mode(self, video_obj):
 
         # Create widget for progressbar
@@ -206,6 +99,8 @@ class LineScanner(object):
         if config.getboolean('DEFAULT', 'visualize'):
             fig = plt.gcf()
             fig.canvas.set_window_title('Video')
+        else:
+            fig = None
 
         # Centroid reference for ROi
         centroid = {'x': 0, 'y': 0}
@@ -355,10 +250,11 @@ class LineScanner(object):
         # combinedImage = np.empty((video_width,video_height*2,3), np.uint8)
         combinedImage = np.empty((video_height, video_width * 2, 3), np.uint8)
 
-        # fig = plt.gcf()
-        fig = plt.figure()
-        # fig = plt.ion()
-        fig.canvas.set_window_title('Video')
+        if config.getboolean('DEFAULT', 'visualize'):
+            # fig = plt.gcf()
+            fig = plt.figure()
+            # fig = plt.ion()
+            fig.canvas.set_window_title('Video')
 
         # Scanner loop
         while success:
@@ -824,16 +720,93 @@ class LineScanner(object):
         return True
 
 
+def run_scanner(video_path, scan_mode):
+    '''
+    *** DESCRIPTION
+        This is the scanner function.
+    *** INPUT
+        <scan_mode>:        scan mode to process video e.g.(column/width)
+        <video_path>:       video file to process
+    *** OUTPUT
+        <scanned image>:    A flat image (unwrapped) from the rotating object
+    '''
+    config.read(config_path)
+    scanner = LineScanner()
+    scanner.mode = scan_mode
+    scanner.input_dir = video_path
+
+    # check if input file exists
+    if not os.path.isfile(scanner.input_dir):
+        print("-> file: %s could not be found" % scanner.input_dir)
+        print("")
+        return
+
+    # Save input directory
+    scanner.filename = os.path.basename(os.path.splitext(scanner.input_dir)[0])
+    scanner.output_dir = os.path.join(os.getcwd(), "RESULT")
+    try:
+        os.mkdir(scanner.output_dir)
+    except OSError:
+        pass
+
+    # ================================================================ DEBUG
+    # print debug info?
+    if config.getboolean('DEBUG', 'visualize'):
+        print("[DEBUG] filename:        ", scanner.filename)
+        print("[DEBUG] input dir:       ", scanner.input_dir)
+        print("[DEBUG] output dir:      ", scanner.output_dir)
+    # ================================================================ DEBUG
+
+    # Video object
+    video_obj = cv2.VideoCapture(scanner.input_dir)
+
+    # Total number of frames in video
+    scanner.totalFrames = int(video_obj.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    # ================================================================ DEBUG
+    # print debug info?
+    if config.getboolean('DEBUG', 'visualize'):
+        print("[DEBUG] total frames:            ", scanner.totalFrames)
+        print("[DEBUG] frames per second:       ", int(video_obj.get(cv2.CAP_PROP_FPS)))
+        print("[DEBUG] duration in seconds:     ", float(round(scanner.totalFrames / int(video_obj.get(cv2.CAP_PROP_FPS)), 2)))
+    # ================================================================ DEBUG
+
+    # ================================================================ DEBUG
+    # print debug info?
+    if config.getboolean('DEBUG', 'visualize'):
+        print("")
+        print("============================")
+        print("processing video...")
+        print("")
+    # ================================================================ DEBUG
+
+    if scanner.mode == "width":
+        # scan mode based in width_roi
+        scanner.width_scan_mode(video_obj)
+
+        # Concadenate list of ROis
+        scanner.concatenate_frames()
+
+    elif scanner.mode == "column":
+        scanner.column_scan_mode(video_obj)
+
+
 # Main program
 if __name__ == '__main__':
+    if len(sys.argv) < 3:
+        print("-> Starting GUI mode.")
+        from gui import App
+        app = App()
+        app.mainloop()
+    else:
+        scan_mode = sys.argv[1]
+        video_file = sys.argv[2]
+        if scan_mode not in ["column", "width"]:
+            print("")
+            print("-> mode: <column> for column pixel scan")
+            print("-> mode: <width> for width_roi pixel scan")
+            print("-> Usage %s <scan_mode> <video_file>" % sys.argv[0])
+            print("")
+            sys.exit(-1)
 
-    print("")
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-    print("***   MAIN PROGRAM        ***")
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-
-    # Class object
-    scanner = LineScanner()
-
-    # Init scanner
-    scanner.init_scan()
+        run_scanner(video_file, scan_mode)
