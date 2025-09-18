@@ -1,0 +1,16 @@
+# Line Scan Camera v2.0 - Requirements
+# 
+# RECOMMENDED INSTALLATION METHOD:
+# Use the conda environment for best compatibility:
+#   conda env create -f environment.yml
+#   conda activate stitch
+#   python main.py
+#
+# ALTERNATIVE: pip installation (if conda is not available)
+# pip install -r requirements.txt
+
+opencv-python>=4.5.0
+numpy>=1.19.0
+matplotlib>=3.3.0
+pillow>=8.0.0
+progressbar2>=4.0.0

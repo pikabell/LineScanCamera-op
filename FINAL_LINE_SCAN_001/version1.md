@@ -1,0 +1,7 @@
+- [X] Line scan works
+- [X] Width mode works
+- [X] Live as well as video mode works
+- [X] Scroll implemented
+- [ ] GPU Usage
+- [ ] Image folder mode
+- [ ] Better Blending
