@@ -27,6 +27,7 @@ import cv2
 
 from .image_metadata import ImageMetadata
 from ..utils.config_manager import get_config
+from ..utils.gpu_acceleration import get_gpu_processor, is_gpu_available
 
 
 class LineScanner:
@@ -56,6 +57,15 @@ class LineScanner:
         self.totalFrames = 0
         self.list_of_Frames = []
         self.config = get_config()
+        
+        # Initialize GPU processor
+        self.gpu_processor = get_gpu_processor()
+        self.gpu_available = is_gpu_available()
+        
+        if self.gpu_available:
+            print("✓ GPU acceleration enabled for line scanning")
+        else:
+            print("! Using CPU processing (GPU acceleration not available)")
     
     def __str__(self):
         """String representation of the LineScanner object"""
@@ -146,7 +156,7 @@ class LineScanner:
     
     def column_scan_mode(self, video_obj):
         """
-        Process video in column scan mode
+        Process video in column scan mode with GPU acceleration
         
         Args:
             video_obj (cv2.VideoCapture): OpenCV video capture object
@@ -184,64 +194,168 @@ class LineScanner:
         video_height = int(video_obj.get(cv2.CAP_PROP_FRAME_HEIGHT))
         video_width = int(video_obj.get(cv2.CAP_PROP_FRAME_WIDTH))
         
-        # Initialize flat image for column ROI
-        flatImage = np.empty((video_height, self.totalFrames, 3), np.uint8)
+        # Smart processing mode selection based on video size and memory
+        gpu_streaming_threshold = self.config.get_int('GPU', 'streaming_threshold', 1000)
+        gpu_batch_threshold = self.config.get_int('GPU', 'batch_threshold', 200)
         
-        # Main scanner loop
-        while success:
-            self._debug_print(f"[DEBUG] frame {count}")
+        if self.gpu_available and self.totalFrames > gpu_streaming_threshold:
+            # For very large videos, use streaming mode to avoid memory issues
+            print(f"Using GPU streaming processing for {self.totalFrames} frames...")
             
-            # Read frame from video
-            success, image = video_obj.read()
-            
-            # Validate frame
-            if not self._validate_frame(image, success, count):
-                continue
-            
-            # Use image as-is (no rotation for column mode)
-            image_rot = image
-            
-            # Compute centroid on first frame
-            if count == 0:
-                boundingBoxMetadata = self.compute_object_coordinates(image_rot)
+            # Compute centroid from first frame
+            success, first_frame = video_obj.read()
+            if success and first_frame is not None:
+                boundingBoxMetadata = self.compute_object_coordinates(first_frame)
                 centroid['x'] = boundingBoxMetadata['cx']
-                centroid['y'] = boundingBoxMetadata['cy']
+                video_height, video_width = first_frame.shape[:2]
+                
+                # Reset video to beginning
+                video_obj.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                
+                # Define progress callback
+                def update_progress(frame_count):
+                    bar.update(frame_count)
+                
+                # Use streaming processing with progress callback
+                flatImage = self.gpu_processor.stream_process_frames(
+                    video_obj, int(centroid['x']), 'column', 
+                    total_frames=self.totalFrames, progress_callback=update_progress
+                )
+                
+                bar.finish()
+            else:
+                print("Could not read first frame")
+                return
+                
+        elif self.gpu_available and self.totalFrames > gpu_batch_threshold:
+            # For medium videos, use chunked GPU processing
+            print(f"Using GPU chunked processing for {self.totalFrames} frames...")
             
-            # Update video dimensions
-            rows, cols = image_rot.shape[:2]
-            video_height = rows
-            video_width = cols
+            # Read frames in smaller batches to manage memory
+            batch_size = 200  # Conservative batch size for memory management
+            current_batch = 0
+            total_batches = (self.totalFrames + batch_size - 1) // batch_size
             
-            # Extract column ROI
-            column_roi = image_rot[:, int(centroid['x'])].copy()
-            flatImage[:, count] = column_roi
+            all_results = []
             
-            # Draw line on image for visualization
-            if self.config.get_boolean('DEFAULT', 'visualize'):
-                start_point = (int(centroid['x']), 0)
-                end_point = (int(centroid['x']), video_height)
-                color = (255, 0, 0)  # Blue line in BGR
-                thickness = 15
-                image_with_line = cv2.line(image_rot, start_point, end_point, color, thickness)
-                self._visualize_frame(image_with_line, count)
+            while success and count < self.totalFrames:
+                # Read batch of frames
+                batch_frames = []
+                batch_count = 0
+                
+                while success and batch_count < batch_size and count < self.totalFrames:
+                    success, image = video_obj.read()
+                    if success and image is not None:
+                        batch_frames.append(image)
+                        batch_count += 1
+                    count += 1
+                    bar.update(count)
+                
+                if batch_frames:
+                    # Compute centroid from first frame of first batch
+                    if current_batch == 0:
+                        boundingBoxMetadata = self.compute_object_coordinates(batch_frames[0])
+                        centroid['x'] = boundingBoxMetadata['cx']
+                        video_height, video_width = batch_frames[0].shape[:2]
+                    
+                    # Process batch with optimized GPU processing
+                    print(f"Processing batch {current_batch + 1}/{total_batches}...")
+                    
+                    # Define progress callback for this batch
+                    batch_start_frame = current_batch * batch_size
+                    def update_batch_progress(processed_count):
+                        actual_frame = batch_start_frame + processed_count
+                        if actual_frame <= count:  # Don't exceed current read count
+                            bar.update(actual_frame)
+                    
+                    batch_result = self.gpu_processor.batch_process_frames_gpu(
+                        batch_frames, int(centroid['x']), 'column',
+                        progress_callback=update_batch_progress
+                    )
+                    
+                    if batch_result is not None and batch_result.size > 0:
+                        all_results.append(batch_result)
+                    
+                    current_batch += 1
             
-            count += 1
-            bar.update(count)
-            self._debug_print("done.")
+            bar.finish()
+            
+            # Combine all batch results
+            if all_results:
+                print("Combining batch results...")
+                flatImage = np.concatenate(all_results, axis=1)
+            else:
+                print("No valid results from GPU processing")
+                return
+        else:
+            # Standard CPU processing for smaller videos or when GPU not available
+            print("Using standard CPU processing...")
+            
+            # Initialize flat image for column ROI
+            flatImage = np.empty((video_height, self.totalFrames, 3), np.uint8)
+            
+            # Main scanner loop
+            while success:
+                self._debug_print(f"[DEBUG] frame {count}")
+                
+                # Read frame from video
+                success, image = video_obj.read()
+                
+                # Validate frame
+                if not self._validate_frame(image, success, count):
+                    continue
+                
+                # Use image as-is (no rotation for column mode)
+                image_rot = image
+                
+                # Compute centroid on first frame
+                if count == 0:
+                    boundingBoxMetadata = self.compute_object_coordinates(image_rot)
+                    centroid['x'] = boundingBoxMetadata['cx']
+                    centroid['y'] = boundingBoxMetadata['cy']
+                
+                # Update video dimensions
+                rows, cols = image_rot.shape[:2]
+                video_height = rows
+                video_width = cols
+                
+                # Extract column ROI
+                column_roi = image_rot[:, int(centroid['x'])].copy()
+                flatImage[:, count] = column_roi
+                
+                # Draw line on image for visualization
+                if self.config.get_boolean('DEFAULT', 'visualize'):
+                    start_point = (int(centroid['x']), 0)
+                    end_point = (int(centroid['x']), video_height)
+                    color = (255, 0, 0)  # Blue line in BGR
+                    thickness = 15
+                    image_with_line = cv2.line(image_rot, start_point, end_point, color, thickness)
+                    self._visualize_frame(image_with_line, count)
+                
+                count += 1
+                bar.update(count)
+                self._debug_print("done.")
+            
+            bar.finish()
         
         # Cleanup
         cv2.destroyAllWindows()
         if self.config.get_boolean('DEFAULT', 'visualize'):
             plt.close('all')
-        bar.finish()
         
-        # Resize and save result
+        # Resize and save result (GPU accelerated if available)
         dsize = (video_width, video_height)
-        flatImage = cv2.resize(flatImage, dsize)
+        if self.gpu_available:
+            flatImage = self.gpu_processor.resize_gpu(flatImage, dsize)
+        else:
+            flatImage = cv2.resize(flatImage, dsize)
         
         output_path = os.path.join(self.output_dir, f"{self.filename}-ColumnROi.jpg")
         cv2.imwrite(output_path, flatImage)
         print(f"Column scan result saved to: {output_path}")
+        
+        if self.gpu_available:
+            print("✓ GPU acceleration completed successfully")
     
     def concatenate_frames(self):
         """
@@ -279,18 +393,24 @@ class LineScanner:
             col_roi = image1[:, int(image1.shape[1] / 2)].copy()
             flatImage[:, n] = col_roi
             
-            # Concatenate ROIs horizontally
+            # Concatenate ROIs horizontally (GPU accelerated if available)
             if n + 1 < len(self.list_of_Frames):
                 image2 = self.list_of_Frames[n + 1].get_roi()
                 
                 self._debug_print(f"[DEBUG] frame {n}-{n + 1}")
                 
                 if n > 0:
-                    # Concatenate with existing result
-                    result = np.concatenate((result, image2), axis=1)
+                    # Use GPU acceleration for large concatenations
+                    if self.gpu_available and len(result) > 0:
+                        result = self.gpu_processor.concatenate_gpu([result, image2], axis=1)
+                    else:
+                        result = np.concatenate((result, image2), axis=1)
                 else:
                     # First concatenation
-                    result = np.concatenate((image1, image2), axis=1)
+                    if self.gpu_available:
+                        result = self.gpu_processor.concatenate_gpu([image1, image2], axis=1)
+                    else:
+                        result = np.concatenate((image1, image2), axis=1)
             
             bar.update(n)
         
@@ -325,26 +445,26 @@ class LineScanner:
         # Convert to grayscale
         image_gray = self._bgr_to_gray(image)
         
-        # Apply Gaussian blur to remove noise
-        image_blur = cv2.GaussianBlur(image_gray, (17, 17), 0)
+        # Apply Gaussian blur to remove noise (GPU accelerated)
+        image_blur = self.gpu_processor.gaussian_blur_gpu(image_gray, (17, 17), 0)
         
         # Apply adaptive threshold
         thresh = cv2.adaptiveThreshold(
             image_blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 7, 2
         )
         
-        # Morphological operations to clean up the image
+        # Morphological operations to clean up the image (GPU accelerated)
         kernel = np.ones((7, 7), np.uint8)
-        thresh_open = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=20)
-        thresh_close = cv2.morphologyEx(thresh_open, cv2.MORPH_CLOSE, kernel, iterations=30)
+        thresh_open = self.gpu_processor.morphology_operations_gpu(thresh, kernel, 'open', iterations=20)
+        thresh_close = self.gpu_processor.morphology_operations_gpu(thresh_open, kernel, 'close', iterations=30)
         
         # Visualize threshold process if enabled
         if self.config.get_boolean('THRESH', 'visualize'):
             self._visualize_threshold_process(image_gray, thresh, thresh_open, thresh_close)
         
-        # Further morphological operations
-        thresh_eroded = cv2.erode(thresh_close, kernel, iterations=6)
-        thresh_dilated = cv2.dilate(thresh_eroded, None, iterations=2)
+        # Further morphological operations (GPU accelerated)
+        thresh_eroded = self.gpu_processor.morphology_operations_gpu(thresh_close, kernel, 'erode', iterations=6)
+        thresh_dilated = self.gpu_processor.morphology_operations_gpu(thresh_eroded, kernel, 'dilate', iterations=2)
         thresh_edges = cv2.Canny(thresh_dilated, 30, 200)
         
         # Visualize morphology operations if enabled

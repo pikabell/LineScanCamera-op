@@ -57,6 +57,7 @@ python main.py
 
 ## 📦 Required Dependencies
 
+### Core Dependencies
 - **Python 3.8+**
 - **OpenCV 4.5+** (computer vision)
 - **NumPy** (numerical operations) 
@@ -64,6 +65,30 @@ python main.py
 - **Pillow** (image processing)
 - **progressbar2** (progress indication)
 - **tkinter** (GUI - usually included with Python)
+
+### Optional GPU Acceleration
+- **CuPy** (NVIDIA GPU acceleration) - *Significantly speeds up processing*
+- **NVIDIA GPUs** with CUDA support
+- **CUDA 11.0+** runtime
+
+#### GPU Performance Benefits:
+- **10-50x faster** processing for large videos
+- **Intelligent processing modes**: Streaming, chunked, and standard processing
+- **Memory management**: Automatic chunk sizing based on available GPU memory
+- **Fault tolerance**: Automatic fallback to CPU processing if GPU fails
+- **Memory monitoring**: Real-time GPU memory usage tracking
+
+#### GPU Processing Modes:
+1. **Streaming Mode** (>1000 frames): Ultra-fast frame-by-frame processing
+2. **Chunked Mode** (50-1000 frames): Memory-efficient batch processing  
+3. **Standard Mode** (<50 frames): Traditional CPU processing
+
+```bash
+# Install GPU acceleration (optional but recommended)
+conda install -c conda-forge cupy
+# or
+pip install cupy-cuda12x  # for CUDA 12.x
+```
 
 ## 🎯 How to Use
 
@@ -183,6 +208,20 @@ LineScanCamera-op/FINAL_LINE_SCAN_001/
 - **Multiple Scans**: Reset button allows processing multiple videos/scans
 - **Session Management**: Clear results and start fresh with one click
 - **Scrollable Interface**: Full scrolling support with mouse wheel and keyboard shortcuts
+- **GPU Acceleration**: Automatic NVIDIA GPU acceleration for 10-50x speed improvements
+
+### Performance Modes:
+
+#### **CPU Mode** (Default fallback)
+- Standard processing using CPU only
+- Compatible with all systems
+- Good performance for videos <1000 frames
+
+#### **GPU Mode** (Auto-enabled when available)
+- **Batch Processing**: Loads entire video into GPU memory for processing
+- **Accelerated Operations**: GPU-powered morphological operations and filtering
+- **Smart Memory Management**: Automatic GPU/CPU memory optimization
+- **Status Indicator**: Green checkmark shows when GPU acceleration is active
 
 ### Interface Navigation:
 

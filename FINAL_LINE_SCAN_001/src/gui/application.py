@@ -18,6 +18,7 @@ from PIL import Image, ImageTk
 
 from ..core import run_scanner, CameraScanner
 from ..utils import get_config
+from ..utils.gpu_acceleration import is_gpu_available
 
 
 class TextRedirector:
@@ -53,6 +54,13 @@ class LineScanGUI(tk.Tk):
         
         # Initialize configuration
         self.config_manager = get_config()
+        
+        # Check GPU availability
+        self.gpu_available = is_gpu_available()
+        if self.gpu_available:
+            print("✓ GPU acceleration available and enabled")
+        else:
+            print("! GPU acceleration not available - using CPU processing")
         
         # Initialize state variables
         self.camera_running = False
@@ -106,6 +114,9 @@ class LineScanGUI(tk.Tk):
         
         # Input source selection
         self._create_source_selection(main_frame)
+        
+        # GPU status indicator
+        self._create_gpu_status(main_frame)
         
         # Video file frame
         self._create_video_frame(main_frame)
@@ -213,6 +224,34 @@ class LineScanGUI(tk.Tk):
             command=self.switch_source_view
         )
         camera_radio.pack(side="left", padx=5)
+    
+    def _create_gpu_status(self, parent):
+        """Create GPU status indicator"""
+        gpu_frame = ttk.LabelFrame(parent, text="Performance")
+        gpu_frame.pack(fill="x", pady=5)
+        
+        if self.gpu_available:
+            status_text = "✓ GPU Acceleration Enabled"
+            status_color = "green"
+        else:
+            status_text = "! CPU Processing Mode"
+            status_color = "orange"
+        
+        gpu_status_label = ttk.Label(
+            gpu_frame, text=status_text, foreground=status_color
+        )
+        gpu_status_label.pack(side="left", padx=5)
+        
+        # Add performance tip
+        if self.gpu_available:
+            tip_text = "(Automatic GPU acceleration for large videos)"
+        else:
+            tip_text = "(Install CuPy for GPU acceleration)"
+        
+        tip_label = ttk.Label(
+            gpu_frame, text=tip_text, foreground="gray"
+        )
+        tip_label.pack(side="right", padx=5)
     
     def _create_video_frame(self, parent):
         """Create video file selection widgets with preview"""
