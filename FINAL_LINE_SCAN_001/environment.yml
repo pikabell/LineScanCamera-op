@@ -1,14 +1,16 @@
-name: stitch
+name: stitch_test
 channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.8
-  - opencv=4.5.*
-  - numpy=1.19.*
-  - matplotlib=3.3.*
-  - pillow=8.0.*
-  - progressbar2=4.0.*
+  - python=3.10
+  - numpy
+  - scipy
+  - matplotlib
+  - scikit-image
+  - opencv
   - pip
   - pip:
-    - opencv-python==4.5.*
+      - cupy-cuda12x
+      - fastrlock
+      - progressbar2

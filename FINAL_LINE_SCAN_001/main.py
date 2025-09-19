@@ -15,8 +15,6 @@ Examples:
     python main.py column video.avi          # Column scan mode
     python main.py width video.mp4           # Width scan mode
 
-Author: ECIL Team
-Version: 2.0.0
 """
 
 import sys
@@ -35,7 +33,6 @@ def main():
     # Print application header
     print("=" * 60)
     print("Line Scan Camera v2.0")
-    print("ECIL - Enhanced Computer Imaging Lab")
     print("=" * 60)
     
     # Check command line arguments
